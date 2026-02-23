@@ -58,7 +58,7 @@ class MPSlipMapFrame(wx.Frame):
             pass
         self.state = state
         state.frame = self
-        state.grid = True
+        state.grid = False
         state.follow = True
         state.download = True
         state.popup_objects = None

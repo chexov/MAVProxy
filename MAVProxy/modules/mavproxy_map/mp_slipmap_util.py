@@ -467,6 +467,116 @@ class SlipFlightModeLegend(SlipObject):
         img[py:py+h, px:px+w] = self._img
 
 
+class SlipCompassRose(SlipObject):
+    '''a compass rose overlay drawn in screen coordinates'''
+    def __init__(self, key, layer, heading=None, wind_dir=None, interval=30,
+                 colour=(200, 200, 200), heading_colour=(0, 0, 255),
+                 wind_colour=(255, 255, 0)):
+        SlipObject.__init__(self, key, layer)
+        self.heading = heading
+        self.wind_dir = wind_dir
+        self.interval = interval
+        self.colour = colour
+        self.heading_colour = heading_colour
+        self.wind_colour = wind_colour
+
+    def draw(self, img, pixmapper, bounds):
+        '''draw compass rose on the image'''
+        (height, width) = img.shape[:2]
+        cx, cy = width // 2, height // 2
+        margin = 40
+        radius = min(width, height) // 2 - margin
+        if radius < 30:
+            return
+        tick_len = 12
+        fontscale = 0.45
+
+        for deg in range(0, 360, self.interval):
+            rad = math.radians(deg - 90)  # 0 deg at top (north)
+            # outer tick point
+            ox = int(cx + radius * math.cos(rad))
+            oy = int(cy + radius * math.sin(rad))
+            # inner tick point
+            ix = int(cx + (radius - tick_len) * math.cos(rad))
+            iy = int(cy + (radius - tick_len) * math.sin(rad))
+            cv2.line(img, (ix, iy), (ox, oy), self.colour, 1, cv2.LINE_AA)
+            # text position (outside ticks)
+            label = str(deg)
+            ((tw, th), _) = cv2.getTextSize(label, font, fontscale, 1)
+            tx = int(cx + (radius + 8) * math.cos(rad)) - tw // 2
+            ty = int(cy + (radius + 8) * math.sin(rad)) + th // 2
+            # outline then fill for readability
+            cv2.putText(img, label, (tx, ty), font, fontscale, (0, 0, 0), 3, cv2.LINE_AA)
+            cv2.putText(img, label, (tx, ty), font, fontscale, self.colour, 1, cv2.LINE_AA)
+
+        # heading line
+        if self.heading is not None:
+            hrad = math.radians(self.heading - 90)
+            hx = int(cx + radius * math.cos(hrad))
+            hy = int(cy + radius * math.sin(hrad))
+            cv2.line(img, (cx, cy), (hx, hy), self.heading_colour, 2, cv2.LINE_AA)
+
+        # wind direction stub near the rim (direction wind is coming FROM)
+        if self.wind_dir is not None:
+            wrad = math.radians(self.wind_dir - 90)
+            w_inner = int(radius - tick_len * 2)
+            wix = int(cx + w_inner * math.cos(wrad))
+            wiy = int(cy + w_inner * math.sin(wrad))
+            wox = int(cx + radius * math.cos(wrad))
+            woy = int(cy + radius * math.sin(wrad))
+            cv2.line(img, (wix, wiy), (wox, woy), self.wind_colour, 2, cv2.LINE_AA)
+
+
+class SlipHUD(SlipObject):
+    '''a telemetry HUD overlay drawn in screen coordinates'''
+    def __init__(self, key, layer, alt=0, amsl_alt=None, airspeed=0, groundspeed=0,
+                 throttle=0, bat_voltage=0, flightmode='', armed=False,
+                 wind_dir=None, wind_speed=0, home_dist=None):
+        SlipObject.__init__(self, key, layer)
+        self.alt = alt
+        self.amsl_alt = amsl_alt
+        self.airspeed = airspeed
+        self.groundspeed = groundspeed
+        self.throttle = throttle
+        self.bat_voltage = bat_voltage
+        self.flightmode = flightmode
+        self.armed = armed
+        self.wind_dir = wind_dir
+        self.wind_speed = wind_speed
+        self.home_dist = home_dist
+
+    def draw(self, img, pixmapper, bounds):
+        '''draw HUD text on the image'''
+        fontscale = 0.45
+        x = 10
+        y = 20
+        # flight mode and arm status line
+        if self.flightmode:
+            status = self.flightmode + (' | ARMED' if self.armed else ' | DISARMED')
+            self._outline_text(img, status, x, y, fontscale)
+            y += 18
+        lines = [
+            ('ALT',  '%6.1f m' % self.alt + (' | %6.1f AMSL' % self.amsl_alt if self.amsl_alt is not None else '')),
+            ('AS',   '%6.1f m/s' % self.airspeed),
+            ('GS',   '%6.1f m/s' % self.groundspeed),
+            ('Thr',  '%5.0f %%' % self.throttle),
+            ('Bat',  '%5.1f V' % self.bat_voltage),
+        ]
+        if self.wind_dir is not None:
+            lines.append(('Wind', '%03.0f/%4.1f m/s' % (self.wind_dir, self.wind_speed)))
+        if self.home_dist is not None:
+            lines.append(('Home', '%6.0f m' % self.home_dist))
+        for label, value in lines:
+            text = '%-3s %s' % (label, value)
+            self._outline_text(img, text, x, y, fontscale)
+            y += 18
+
+    def _outline_text(self, img, text, x, y, fontscale):
+        '''draw text with dark outline for readability'''
+        cv2.putText(img, text, (x, y), font, fontscale, (0, 0, 0), 3, cv2.LINE_AA)
+        cv2.putText(img, text, (x, y), font, fontscale, (255, 255, 255), 1, cv2.LINE_AA)
+
+
 class SlipThumbnail(SlipObject):
     '''a thumbnail to display on the map'''
     def __init__(self, key, latlon, layer, img,

@@ -242,6 +242,11 @@ class MapModule(mp_module.MPModule):
             'icon - %s [%u]' % (str(flag), self.icon_counter),
             (float(lat), float(lon)),
             icon, layer=3, rotation=0, follow=False))
+        if text:
+            self.map.add_object(mp_slipmap.SlipLabel(
+                'icon_label - %s [%u]' % (str(flag), self.icon_counter),
+                (float(lat), float(lon)), text, layer=3,
+                colour=(0, 255, 255), size=0.5))
         self.icon_counter += 1
         now = time.time()
         tstr = datetime.datetime.fromtimestamp(now).strftime("%Y_%m_%d_%H_%M_%S")
