@@ -9,6 +9,7 @@ Load with: module load maphud
 Toggle with: maphud on|off
 '''
 
+import time
 from MAVProxy.modules.lib import mp_module
 from MAVProxy.modules.lib import mp_util
 
@@ -28,6 +29,8 @@ class MapHUD(mp_module.MPModule):
         self.amsl_alt = None
         self.lat = None
         self.lon = None
+        self.last_status_text = None
+        self.last_status_time = 0
         self._add_hud()
 
     def cmd_maphud(self, args):
@@ -54,6 +57,36 @@ class MapHUD(mp_module.MPModule):
             return None
         return mp_util.gps_distance(self.lat, self.lon, home.x, home.y)
 
+    def _tracker_lines(self):
+        '''return bearing from home to aircraft for manual antenna tracking'''
+        if self.lat is None:
+            return []
+        wp = self.module('wp')
+        if wp is None:
+            return []
+        home = wp.get_home()
+        if home is None:
+            return []
+        bearing = mp_util.gps_bearing(home.x, home.y, self.lat, self.lon)
+        return [('AntBrg', '%5.0f deg' % bearing)]
+
+    def _rf_horizon_lines(self):
+        '''return RF horizon min altitude HUD line based on distance from home.
+        Uses 4/3 effective Earth radius model: h_min = (d_km / 4.12)^2'''
+        dist = self._home_dist()
+        if dist is None or dist < 1:
+            return []
+        d_km = dist / 1000.0
+        h_min = (d_km / 4.12) ** 2
+        return [('AntHoriz', '%5.1fm min' % h_min)]
+
+    def _status_text_lines(self):
+        '''return last AP status message with age'''
+        if self.last_status_text is None:
+            return []
+        age = int(time.time() - self.last_status_time)
+        return [('Msg', '%s (%ds ago)' % (self.last_status_text, age))]
+
     def _add_hud(self):
         from MAVProxy.modules.mavproxy_map import mp_slipmap
         flightmode = self.master.flightmode if self.master else ''
@@ -66,7 +99,8 @@ class MapHUD(mp_module.MPModule):
                 bat_voltage=self.bat_voltage, flightmode=flightmode,
                 armed=armed, wind_dir=self.wind_dir,
                 wind_speed=self.wind_speed,
-                home_dist=self._home_dist()))
+                home_dist=self._home_dist(),
+                extra_lines=self._status_text_lines() + self._tracker_lines() + self._rf_horizon_lines()))
 
     def _remove_hud(self):
         for mp in self.module_matching('map*'):
@@ -93,6 +127,10 @@ class MapHUD(mp_module.MPModule):
             self.amsl_alt = m.alt * 1.0e-3
             self.lat = m.lat * 1.0e-7
             self.lon = m.lon * 1.0e-7
+            self._add_hud()
+        elif mtype == 'STATUSTEXT':
+            self.last_status_text = m.text
+            self.last_status_time = time.time()
             self._add_hud()
         elif mtype == 'HEARTBEAT':
             self._add_hud()

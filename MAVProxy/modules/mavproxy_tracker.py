@@ -8,7 +8,7 @@ Mike McCauley, based on earlier work by Andrew Tridgell
 June 2012
 '''
 
-import sys, os, time
+import sys, os, time, math
 from MAVProxy.modules.lib import mp_settings
 from MAVProxy.modules import mavproxy_map
 from pymavlink import mavutil
@@ -28,13 +28,20 @@ class TrackerModule(mp_module.MPModule):
         from pymavlink import mavparm
         super(TrackerModule, self).__init__(mpstate, "tracker", "antenna tracker control module")
         self.connection = None
+        self.heading = 0
         self.tracker_param = mavparm.MAVParmDict()
         sysid = 2
         self.pstate = ParamState(self.tracker_param, self.logdir, self.vehicle_name, 'tracker.parm', mpstate, sysid)
         self.tracker_settings = mp_settings.MPSettings(
             [ ('port', str, "/dev/ttyUSB0"),
               ('baudrate', int, 57600),
-              ('debug', int, 0)
+              ('debug', int, 0),
+              ('hfov', int, 15),
+              ('vfov', int, 15),
+              ('range', int, 0),
+              ('lat', float, 0),
+              ('lon', float, 0),
+              ('heading', float, 0),
               ]
             )
         self.add_command('tracker', self.cmd_tracker,
@@ -139,9 +146,39 @@ class TrackerModule(mp_module.MPModule):
             if m.get_srcSystem() != connection.target_system:
                 connection.mav.send(m)
 
+    def update_map(self, lat, lon, heading, color):
+        '''update tracker icon and beam on the map'''
+        if self.module('map') is None:
+            return
+        if lat == 0 and lon == 0:
+            return
+        self.module('map').create_vehicle_icon('AntennaTracker', 'red', follow=False, vehicle_type='antenna')
+        self.mpstate.map.set_position('AntennaTracker', (lat, lon), rotation=heading)
+        if self.tracker_settings.range > 0:
+            from MAVProxy.modules.mavproxy_map import mp_slipmap
+            self.mpstate.map.add_object(mp_slipmap.SlipCircle(
+                'AntennaBeam', 3, (lat, lon),
+                self.tracker_settings.range,
+                color,
+                linewidth=1,
+                start_angle=-self.tracker_settings.hfov / 2,
+                end_angle=self.tracker_settings.hfov / 2,
+                rotation=(-90 + heading) % 360,
+                add_radii=True,
+                fill_alpha=0.15,
+            ))
+
     def idle_task(self):
         '''called in idle time'''
         if not self.connection:
+            # pseudo tracker mode: draw from settings, fall back to home position
+            lat = self.tracker_settings.lat
+            lon = self.tracker_settings.lon
+            if lat == 0 and lon == 0 and 'HOME_POSITION' in self.master.messages:
+                home = self.master.messages['HOME_POSITION']
+                lat = home.latitude * 1.0e-7
+                lon = home.longitude * 1.0e-7
+            self.update_map(lat, lon, self.tracker_settings.heading, (200, 200, 200))
             return
 
         # check for a mavlink message from the tracker
@@ -155,14 +192,13 @@ class TrackerModule(mp_module.MPModule):
         self.pstate.handle_mavlink_packet(self.connection, m)
         self.pstate.fetch_check(self.connection)
 
-        if self.module('map') is None:
-            return
-
         if m.get_type() == 'GLOBAL_POSITION_INT':
-            (self.lat, self.lon, self.heading) = (m.lat*1.0e-7, m.lon*1.0e-7, m.hdg*0.01)
-            if self.lat != 0 or self.lon != 0:
-                self.module('map').create_vehicle_icon('AntennaTracker', 'red', follow=False, vehicle_type='antenna')
-                self.mpstate.map.set_position('AntennaTracker', (self.lat, self.lon), rotation=self.heading)
+            (self.lat, self.lon) = (m.lat*1.0e-7, m.lon*1.0e-7)
+        elif m.get_type() == 'ATTITUDE':
+            self.heading = math.degrees(m.yaw) % 360
+
+        if hasattr(self, 'lat') and (self.lat != 0 or self.lon != 0):
+            self.update_map(self.lat, self.lon, self.heading, (0, 200, 0))
 
 
     def cmd_tracker_start(self):

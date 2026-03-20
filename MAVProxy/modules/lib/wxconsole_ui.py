@@ -13,7 +13,7 @@ class ConsoleFrame(wx.Frame):
 
     def __init__(self, state, title):
         self.state = state
-        wx.Frame.__init__(self, None, title=title, size=(800,300))
+        wx.Frame.__init__(self, None, title=title, size=(800,600))
         # different icons for MAVExplorer and MAVProxy
         try:
             if title == "MAVExplorer":
@@ -38,6 +38,7 @@ class ConsoleFrame(wx.Frame):
         self.vbox = wx.BoxSizer(wx.VERTICAL)
         # start with one status row
         self.status = [wx.BoxSizer(wx.HORIZONTAL)]
+        self.status[0].AddSpacer(5)
         self.vbox.Add(self.status[0], 0, flag=wx.ALIGN_LEFT | wx.TOP)
         self.vbox.Add(self.control, 1, flag=wx.LEFT | wx.BOTTOM | wx.GROW)
 
@@ -120,6 +121,7 @@ class ConsoleFrame(wx.Frame):
                     # possibly add more status rows
                     for i in range(len(self.status), obj.row+1):
                         self.status.append(wx.BoxSizer(wx.HORIZONTAL))
+                        self.status[i].AddSpacer(5)
                         self.vbox.Insert(len(self.status)-1, self.status[i], 0, flag=wx.ALIGN_LEFT | wx.TOP)
                         self.vbox.Layout()
                     self.status[obj.row].Add(value, border=5)

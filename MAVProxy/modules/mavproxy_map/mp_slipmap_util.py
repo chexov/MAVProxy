@@ -148,7 +148,7 @@ class SlipArrow(SlipObject):
 
 class SlipCircle(SlipObject):
     '''a circle to display on the map'''
-    def __init__(self, key, layer, latlon, radius, color, linewidth, arrow=False, popup_menu=None, start_angle=None, end_angle=None, rotation=None, add_radii=False):  # noqa:E501
+    def __init__(self, key, layer, latlon, radius, color, linewidth, arrow=False, popup_menu=None, start_angle=None, end_angle=None, rotation=None, add_radii=False, fill_alpha=None):  # noqa:E501
         SlipObject.__init__(self, key, layer, popup_menu=popup_menu)
         self.latlon = latlon
         if radius < 0:
@@ -163,6 +163,7 @@ class SlipCircle(SlipObject):
         self.end_angle = end_angle
         self.rotation = rotation
         self.add_radii = add_radii
+        self.fill_alpha = fill_alpha
 
     def draw(self, img, pixmapper, bounds):
         if self.hidden:
@@ -177,6 +178,10 @@ class SlipCircle(SlipObject):
         radius_px = int(self.radius * pixels_per_meter)
         if self.start_angle is not None:
             axes = (radius_px, radius_px)
+            if self.fill_alpha is not None:
+                overlay = img.copy()
+                cv2.ellipse(overlay, center_px, axes, self.rotation, self.start_angle, self.end_angle, self.color, -1)
+                cv2.addWeighted(overlay, self.fill_alpha, img, 1 - self.fill_alpha, 0, img)
             cv2.ellipse(img, center_px, axes, self.rotation, self.start_angle, self.end_angle, self.color, self.linewidth)
             if self.add_radii:
                 rimpoint1 = (center_px[0] + int(radius_px * math.cos(math.radians(self.rotation+self.start_angle))),
@@ -197,10 +202,12 @@ class SlipCircle(SlipObject):
         self.center_px = center_px
 
     def bounds(self):
-        '''return bounding box'''
+        '''return bounding box that covers the full circle radius'''
         if self.hidden:
             return None
-        return (self.latlon[0], self.latlon[1], 0, 0)
+        dlat = self.radius / 111120.0
+        dlon = dlat / max(math.cos(math.radians(self.latlon[0])), 0.01)
+        return (self.latlon[0] - dlat, self.latlon[1] - dlon, dlat * 2, dlon * 2)
 
     def clicked(self, px, py):
         '''check if a click on px,py should be considered a click
@@ -531,7 +538,7 @@ class SlipHUD(SlipObject):
     '''a telemetry HUD overlay drawn in screen coordinates'''
     def __init__(self, key, layer, alt=0, amsl_alt=None, airspeed=0, groundspeed=0,
                  throttle=0, bat_voltage=0, flightmode='', armed=False,
-                 wind_dir=None, wind_speed=0, home_dist=None):
+                 wind_dir=None, wind_speed=0, home_dist=None, extra_lines=None):
         SlipObject.__init__(self, key, layer)
         self.alt = alt
         self.amsl_alt = amsl_alt
@@ -544,11 +551,12 @@ class SlipHUD(SlipObject):
         self.wind_dir = wind_dir
         self.wind_speed = wind_speed
         self.home_dist = home_dist
+        self.extra_lines = extra_lines or []
 
     def draw(self, img, pixmapper, bounds):
         '''draw HUD text on the image'''
         fontscale = 0.45
-        x = 10
+        x = 14
         y = 20
         # flight mode and arm status line
         if self.flightmode:
@@ -566,9 +574,13 @@ class SlipHUD(SlipObject):
             lines.append(('Wind', '%03.0f/%4.1f m/s' % (self.wind_dir, self.wind_speed)))
         if self.home_dist is not None:
             lines.append(('Home', '%6.0f m' % self.home_dist))
+        lines = self.extra_lines + lines
+        # find widest label in pixels for column alignment
+        label_widths = [cv2.getTextSize(label, font, fontscale, 1)[0][0] for label, _ in lines]
+        value_x = x + max(label_widths) + 8 if label_widths else x
         for label, value in lines:
-            text = '%-3s %s' % (label, value)
-            self._outline_text(img, text, x, y, fontscale)
+            self._outline_text(img, label, x, y, fontscale)
+            self._outline_text(img, value, value_x, y, fontscale)
             y += 18
 
     def _outline_text(self, img, text, x, y, fontscale):
