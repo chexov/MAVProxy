@@ -31,6 +31,7 @@ class MapHUD(mp_module.MPModule):
         self.lon = None
         self.last_status_text = None
         self.last_status_time = 0
+        self.last_status_severity = 6
         self._add_hud()
 
     def cmd_maphud(self, args):
@@ -80,12 +81,34 @@ class MapHUD(mp_module.MPModule):
         h_min = (d_km / 4.12) ** 2
         return [('AntHoriz', '%5.1fm min' % h_min)]
 
+    def _severity_colour(self, severity):
+        '''map MAVLink severity to BGR colour for SlipHUD.
+        Uses bright saturated colours readable over dark satellite imagery.'''
+        # 0-3: EMERGENCY/ALERT/CRITICAL/ERROR → bright red
+        if severity <= 3:
+            return (80, 80, 255)
+        # 4: WARNING → bright yellow
+        if severity == 4:
+            return (80, 255, 255)
+        # 5-7: NOTICE/INFO/DEBUG → WHITE
+        return (255, 255, 255)
+
+    def _severity_tag(self, severity):
+        '''text tag for severity level (dual coding per MIL-STD-1472H 5.17.25.11)'''
+        if severity <= 3:
+            return '[ERR]'
+        if severity == 4:
+            return '[WARN]'
+        return '[INFO]'
+
     def _status_text_lines(self):
         '''return last AP status message with age'''
         if self.last_status_text is None:
             return []
         age = int(time.time() - self.last_status_time)
-        return [('Msg', '%s (%ds ago)' % (self.last_status_text, age))]
+        colour = self._severity_colour(self.last_status_severity)
+        tag = self._severity_tag(self.last_status_severity)
+        return [('MSG', '%s %s (%ds ago)' % (tag, self.last_status_text, age), colour)]
 
     def _add_hud(self):
         from MAVProxy.modules.mavproxy_map import mp_slipmap
@@ -131,6 +154,7 @@ class MapHUD(mp_module.MPModule):
         elif mtype == 'STATUSTEXT':
             self.last_status_text = m.text
             self.last_status_time = time.time()
+            self.last_status_severity = m.severity
             self._add_hud()
         elif mtype == 'HEARTBEAT':
             self._add_hud()

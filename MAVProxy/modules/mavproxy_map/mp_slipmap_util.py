@@ -560,33 +560,48 @@ class SlipHUD(SlipObject):
         y = 20
         # flight mode and arm status line
         if self.flightmode:
-            status = self.flightmode + (' | ARMED' if self.armed else ' | DISARMED')
-            self._outline_text(img, status, x, y, fontscale)
+            arm_text = ' | ARMED' if self.armed else ' | DISARMED'
+            arm_colour = (80, 80, 255) if self.armed else (255, 255, 255)
+            self._outline_text(img, self.flightmode, x, y, fontscale)
+            mode_w = cv2.getTextSize(self.flightmode, font, fontscale, 1)[0][0]
+            self._outline_text(img, arm_text, x + mode_w, y, fontscale, arm_colour)
             y += 18
         lines = [
             ('ALT',  '%6.1f m' % self.alt + (' | %6.1f AMSL' % self.amsl_alt if self.amsl_alt is not None else '')),
             ('AS',   '%6.1f m/s' % self.airspeed),
             ('GS',   '%6.1f m/s' % self.groundspeed),
-            ('Thr',  '%5.0f %%' % self.throttle),
-            ('Bat',  '%5.1f V' % self.bat_voltage),
+            ('THR',  '%5.0f %%' % self.throttle),
+            ('BAT',  '%5.1f V' % self.bat_voltage),
         ]
         if self.wind_dir is not None:
-            lines.append(('Wind', '%03.0f/%4.1f m/s' % (self.wind_dir, self.wind_speed)))
+            lines.append(('WIND', '%.0f/%4.1f m/s' % (self.wind_dir, self.wind_speed)))
         if self.home_dist is not None:
-            lines.append(('Home', '%6.0f m' % self.home_dist))
+            lines.append(('HOME', '%6.0f m' % self.home_dist))
         lines = self.extra_lines + lines
         # find widest label in pixels for column alignment
-        label_widths = [cv2.getTextSize(label, font, fontscale, 1)[0][0] for label, _ in lines]
+        label_widths = [cv2.getTextSize(line[0], font, fontscale, 1)[0][0] for line in lines]
         value_x = x + max(label_widths) + 8 if label_widths else x
-        for label, value in lines:
-            self._outline_text(img, label, x, y, fontscale)
-            self._outline_text(img, value, value_x, y, fontscale)
+        for line in lines:
+            label, value = line[0], line[1]
+            if len(line) > 2:
+                # colored line: black rect background, colored label, white value
+                colour = line[2]
+                val_w = cv2.getTextSize(value, font, fontscale, 1)[0][0]
+                th = cv2.getTextSize('X', font, fontscale, 1)[0][1]
+                cv2.rectangle(img, (x - 2, y - th - 2), (value_x + val_w + 2, y + 4),
+                              (0, 0, 0), -1)
+                cv2.putText(img, label, (x, y), font, fontscale, colour, 1, cv2.LINE_AA)
+                cv2.putText(img, value, (value_x, y), font, fontscale,
+                            (255, 255, 255), 1, cv2.LINE_AA)
+            else:
+                self._outline_text(img, label, x, y, fontscale)
+                self._outline_text(img, value, value_x, y, fontscale)
             y += 18
 
-    def _outline_text(self, img, text, x, y, fontscale):
+    def _outline_text(self, img, text, x, y, fontscale, colour=(255, 255, 255)):
         '''draw text with dark outline for readability'''
         cv2.putText(img, text, (x, y), font, fontscale, (0, 0, 0), 3, cv2.LINE_AA)
-        cv2.putText(img, text, (x, y), font, fontscale, (255, 255, 255), 1, cv2.LINE_AA)
+        cv2.putText(img, text, (x, y), font, fontscale, colour, 1, cv2.LINE_AA)
 
 
 class SlipThumbnail(SlipObject):

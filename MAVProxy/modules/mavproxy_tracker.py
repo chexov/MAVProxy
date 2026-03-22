@@ -26,7 +26,7 @@ mode_mapping_antenna = {
 class TrackerModule(mp_module.MPModule):
     def __init__(self, mpstate):
         from pymavlink import mavparm
-        super(TrackerModule, self).__init__(mpstate, "tracker", "antenna tracker control module")
+        super(TrackerModule, self).__init__(mpstate, "tracker", "antenna tracker control module", public=True)
         self.connection = None
         self.heading = 0
         self.tracker_param = mavparm.MAVParmDict()
@@ -44,6 +44,7 @@ class TrackerModule(mp_module.MPModule):
               ('heading', float, 0),
               ]
             )
+        self.tunnel_callbacks = []
         self.add_command('tracker', self.cmd_tracker,
                          "antenna tracker control module",
                          ['<start|arm|disarm|level|mode|position|calpress|mode>',
@@ -192,6 +193,13 @@ class TrackerModule(mp_module.MPModule):
         self.pstate.handle_mavlink_packet(self.connection, m)
         self.pstate.fetch_check(self.connection)
 
+        # forward VRX telemetry into main mavlink stream
+        if m.get_type() == 'NAMED_VALUE_FLOAT' and m.name in ('VRXF', 'VRXA', 'VRXB'):
+            self.send_named_float(m.name, m.value)
+        elif m.get_type() == 'TUNNEL' and m.payload_type == 60100:
+            for cb in self.tunnel_callbacks:
+                cb(m)
+
         if m.get_type() == 'GLOBAL_POSITION_INT':
             (self.lat, self.lon) = (m.lat*1.0e-7, m.lon*1.0e-7)
         elif m.get_type() == 'ATTITUDE':
@@ -199,6 +207,15 @@ class TrackerModule(mp_module.MPModule):
 
         if hasattr(self, 'lat') and (self.lat != 0 or self.lon != 0):
             self.update_map(self.lat, self.lon, self.heading, (0, 200, 0))
+        else:
+            # connected but no GPS fix — yellow
+            lat = self.tracker_settings.lat
+            lon = self.tracker_settings.lon
+            if lat == 0 and lon == 0 and 'HOME_POSITION' in self.master.messages:
+                home = self.master.messages['HOME_POSITION']
+                lat = home.latitude * 1.0e-7
+                lon = home.longitude * 1.0e-7
+            self.update_map(lat, lon, self.heading, (0, 200, 200))
 
 
     def cmd_tracker_start(self):
