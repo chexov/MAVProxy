@@ -20,6 +20,7 @@ class ParamEditorModule(mp_module.MPModule):
         # to work around an issue on MacOS this module is a thin wrapper
         # around a separate ParamEditorMain object
         self.pe_main = None
+        self._init_failed = False
         self.mpstate = mpstate
 
     def unload(self):
@@ -28,15 +29,23 @@ class ParamEditorModule(mp_module.MPModule):
             self.pe_main.unload()
 
     def idle_task(self):
+        if self._init_failed:
+            return
         if not self.pe_main:
             # wait for parameter module to load
             if self.module('param') is None:
                 return
-            from MAVProxy.modules.mavproxy_paramedit import param_editor
-            self.pe_main = param_editor.ParamEditorMain(self.mpstate)
-        if self.pe_main:
-            if self.pe_main.needs_unloading:
-                self.needs_unloading = True
+            try:
+                from MAVProxy.modules.mavproxy_paramedit import param_editor
+                self.pe_main = param_editor.ParamEditorMain(self.mpstate)
+            except Exception as ex:
+                import traceback
+                print("paramedit: failed to start: %s" % ex)
+                traceback.print_exc()
+                self._init_failed = True
+                return
+        if self.pe_main.needs_unloading:
+            self.needs_unloading = True
         self.pe_main.idle_task()
 
     def mavlink_packet(self, m):

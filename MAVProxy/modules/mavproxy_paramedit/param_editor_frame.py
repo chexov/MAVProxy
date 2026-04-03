@@ -9,6 +9,7 @@ import os
 import sys
 import time
 import math
+import fnmatch
 
 from MAVProxy.modules.lib import multiproc
 from MAVProxy.modules.mavproxy_paramedit import checklisteditor as cle
@@ -40,26 +41,26 @@ class ParamEditorFrame(wx.Frame):
         self.search_key = wx.TextCtrl(self, wx.ID_ANY, "")
         self.param_status = (0,0)
         self.param_label = wx.StaticText(self, wx.ID_ANY, "Status: " + str(self.param_status[0]) + "/ " + str(self.param_status[1]), style=wx.ALIGN_CENTRE)
-        self.search_choices = ['All:', 'Actions:TMODE_',
-        'Tuning:PILOT_,ATC_,MOT_,ANGLE_,RC_',
-        'PosControl:VEL_,POS_,WPNAV_,RTL_',
-        'Radio:BRD_RADIO_',
-        'Compass:COMPASS_',
-        'IMU:INS_',
-        'Failsafe:FS_',
-        'EKF2:EK2_,AHRS_EKF_',
-        'EKF3:EK3_,AHRS_EKF_',
-        'Fence:FENCE_',
-        'Logging:LOG_',
-        'GPS:GPS_',
-        'Arming:ARMING_',
-        'Battery:BATT_',
-        'Flight Modes:MODE',
-        'Serial:SERIAL_']
-        categories = [x.split(':')[0] for x in self.search_choices]
-        self.search_list = wx.Choice(self, wx.ID_ANY, choices=categories)
+        self.search_categories = {
+            'Actions': ['TMODE_'],
+            'Tuning': ['PILOT_', 'ATC_', 'MOT_', 'ANGLE_', 'RC_'],
+            'PosCtrl': ['VEL_', 'POS_', 'WPNAV_', 'RTL_'],
+            'Radio': ['BRD_RADIO_'],
+            'Compass': ['COMPASS_'],
+            'IMU': ['INS_'],
+            'Failsafe': ['FS_'],
+            'EKF2': ['EK2_', 'AHRS_EKF_'],
+            'EKF3': ['EK3_', 'AHRS_EKF_'],
+            'Fence': ['FENCE_'],
+            'Logging': ['LOG_'],
+            'GPS': ['GPS_'],
+            'Arming': ['ARMING_'],
+            'Battery': ['BATT_'],
+            'FltModes': ['MODE'],
+            'Serial': ['SERIAL_'],
+        }
+        self.filter_buttons = {}
         self.categorical_list = {}
-        self.search_list.SetSelection(0)
         self.display_list = wx.grid.Grid(self, wx.ID_ANY, size=(1, 1))
         self.search_key.SetHint("Search")
         self.__set_properties()
@@ -78,7 +79,6 @@ class ParamEditorFrame(wx.Frame):
         self.Bind(wx.EVT_BUTTON, self.fetch_param, self.fetch_params)
         self.Bind(wx.EVT_BUTTON, self.write_param, self.write_params)
         self.Bind(wx.EVT_TEXT, self.key_change, self.search_key)
-        self.Bind(wx.EVT_CHOICE, self.category_change, self.search_list)
         if float(str(wx.__version__).split('.')[0]) < 4.0:
             self.Bind(wx.grid.EVT_GRID_CMD_CELL_CHANGE, self.ParamChanged,
                       self.display_list)
@@ -162,9 +162,15 @@ class ParamEditorFrame(wx.Frame):
         sizer_5.Add((10, 10), 0, 0, 0)
         sizer_5.Add(self.search_key, 0, 0, 0)
         sizer_5.Add((10, 10), 0, 0, 0)
-        sizer_5.Add(self.search_list, 0, 0, 0)
-        sizer_5.Add((10, 10), 0, 0, 0)
         sizer_3.Add(sizer_5, 0, 0, 0)
+        sizer_3.Add((5, 5), 0, 0, 0)
+        filter_sizer = wx.WrapSizer(wx.HORIZONTAL)
+        for name in self.search_categories:
+            btn = wx.ToggleButton(self, wx.ID_ANY, name)
+            self.filter_buttons[name] = btn
+            filter_sizer.Add(btn, 0, wx.ALL, 2)
+            self.Bind(wx.EVT_TOGGLEBUTTON, self.on_filter_toggle, btn)
+        sizer_3.Add(filter_sizer, 0, wx.LEFT, 10)
         sizer_2.Add(sizer_3, 0, 0, 0)
         sizer_2.Add((10, 10), 0, 0, 0)
         sizer_2.Add(self.display_list, 1, wx.EXPAND, 0)
@@ -487,41 +493,33 @@ class ParamEditorFrame(wx.Frame):
         self.key_redraw()
         event.Skip()
 
-    def category_change(self, event):
-        key = self.search_choices[self.search_list.GetSelection()]
-        key = key.split(':')[1]
-        self.categorical_list = {}
-        for x in key.split(','):
-            if x == 'MODE':
-                if self.vehicle_name == 'APMrover2':
-                    x = 'MODE'
-                else:
-                    x = 'FLTMODE'
-            for param, value in self.param_received.items():
-                try:
-                    if x.lower() == param.lower()[:len(x)]:
-                        self.categorical_list[param] = value
-                except Exception:
-                    pass
+    def on_filter_toggle(self, event):
         self.key_redraw()
-        event.Skip()
+
+    def update_categorical_list(self):
+        selected = [n for n, btn in self.filter_buttons.items() if btn.GetValue()]
+        if not selected:
+            self.categorical_list = self.param_received
+            return
+        self.categorical_list = {}
+        for name in selected:
+            for prefix in self.search_categories[name]:
+                if prefix == 'MODE' and getattr(self, 'vehicle_name', None) != 'APMrover2':
+                    prefix = 'FLTMODE'
+                for param, value in self.param_received.items():
+                    if str(param).upper().startswith(prefix):
+                        self.categorical_list[param] = value
 
     def key_redraw(self):
-        key = self.search_key.GetValue()
-        if self.search_list.GetString(self.search_list.GetSelection()) == 'All':
-            self.categorical_list = self.param_received
+        self.update_categorical_list()
+        key = self.search_key.GetValue().strip()
+        if not key:
+            self.redraw_grid(self.categorical_list)
+            return
+        pattern = key.upper() if '*' in key else key.upper() + '*'
         temp = {}
         for param, value in self.categorical_list.items():
-            if isinstance(param,str) and key.lower() in param.lower():
-                temp[param] = value
-            else:
-                try:
-                    if key.lower() in (self.htree[param].get('documentation').lower() + self.htree[param].get('humanName').lower()):
-                        temp[param] = value
-                except Exception as e:
-                    continue
-        for param, value in self.param_received.items():
-            if param in temp:
+            if fnmatch.fnmatch(str(param).upper(), pattern):
                 temp[param] = value
         self.redraw_grid(temp)
 
