@@ -40,11 +40,11 @@ class Handler(BaseHTTPServer.BaseHTTPRequestHandler):
       content = None
       error = None
       try:
-        import pkg_resources
+        from importlib import resources as importlib_resources
         name = __name__
         if name == "__main__":
           name = "MAVProxy.modules.mavproxy_mmap.????"
-        content = pkg_resources.resource_stream(name, "mmap_app/%s" % path).read()
+        content = (importlib_resources.files(name) / "mmap_app" / path).read_bytes()
       except IOError as e:
         error = str(e)
       if content:

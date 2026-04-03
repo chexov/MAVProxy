@@ -614,12 +614,12 @@ def mp_icon(filename):
     # when we may be in a package zip file
     raw = None
     try:
-        import pkg_resources
+        from importlib import resources as importlib_resources
         name = __name__
         if name == "__main__":
             name = "MAVProxy.modules.mavproxy_map.mp_tile"
-        stream = pkg_resources.resource_stream(name, f"data/{filename}")
-        raw = np.frombuffer(stream.read(), dtype=np.uint8)
+        data = (importlib_resources.files(name) / "data" / filename).read_bytes()
+        raw = np.frombuffer(data, dtype=np.uint8)
     except Exception:
         try:
             with open(os.path.join(os.path.dirname(__file__), 'data', filename), 'rb') as f:

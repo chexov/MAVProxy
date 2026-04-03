@@ -33,7 +33,7 @@ from MAVProxy.modules.lib.mp_settings import MPSettings, MPSetting
 from MAVProxy.modules.lib import wxsettings
 from MAVProxy.modules.lib.graphdefinition import GraphDefinition
 from lxml import objectify
-import pkg_resources
+from importlib import metadata as importlib_metadata, resources as importlib_resources
 from builtins import input
 import datetime
 import matplotlib
@@ -369,13 +369,13 @@ def load_graphs():
             mestate.console.writeln("Loaded %s" % file)
     # also load the built in graphs
     try:
-        dlist = pkg_resources.resource_listdir("MAVProxy", "tools/graphs")
-        for f in dlist:
-            raw = pkg_resources.resource_stream("MAVProxy", "tools/graphs/%s" % f).read()
+        graphs_dir = importlib_resources.files("MAVProxy") / "tools" / "graphs"
+        for item in graphs_dir.iterdir():
+            raw = item.read_bytes()
             graphs = load_graph_xml(raw, None)
             if graphs:
                 mestate.graphs.extend(graphs)
-                mestate.console.writeln("Loaded %s" % f)
+                mestate.console.writeln("Loaded %s" % item.name)
     except Exception:
         #we're in a Windows exe, where pkg_resources doesn't work
         import pkgutil
@@ -1777,7 +1777,7 @@ if __name__ == "__main__":
     if args.version:
         #pkg_resources doesn't work in the windows exe build, so read the version file
         try:
-            version = pkg_resources.require("mavproxy")[0].version
+            version = importlib_metadata.version("mavproxy")
         except Exception as e:
             start_script = mp_util.dot_mavproxy("version.txt")
             f = open(start_script, 'r')

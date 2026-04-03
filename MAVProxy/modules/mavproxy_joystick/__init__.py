@@ -1,6 +1,6 @@
 import os
 import pygame
-import pkg_resources
+from importlib import resources as importlib_resources
 import yaml
 import fnmatch
 
@@ -64,7 +64,7 @@ class Joystick(mp_module.MPModule):
         if userjoysticks is not None and os.path.isdir(userjoysticks):
             search.append(userjoysticks)
 
-        search.append(pkg_resources.resource_filename(__name__, 'joysticks'))
+        search.append(str(importlib_resources.files(__name__) / 'joysticks'))
 
         for path in search:
             self.log('Looking for joystick definitions in {}'.format(path),

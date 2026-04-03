@@ -1402,8 +1402,8 @@ if __name__ == '__main__':
     if opts.version:
         # pkg_resources doesn't work in the windows exe build, so read the version file
         try:
-            import pkg_resources
-            version = pkg_resources.require("mavproxy")[0].version
+            from importlib.metadata import version as _get_version
+            version = _get_version("mavproxy")
         except Exception:
             start_script = mp_util.dot_mavproxy("version.txt")
             f = open(start_script, 'r')

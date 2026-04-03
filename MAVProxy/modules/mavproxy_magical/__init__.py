@@ -24,9 +24,9 @@ from pymavlink import mavutil
 from MAVProxy.modules.lib import mp_module, mp_util, multiproc
 
 try:
-    import pkg_resources
-    datapath = pkg_resources.resource_filename(__name__, 'data')
-except:
+    from importlib import resources as importlib_resources
+    datapath = str(importlib_resources.files(__name__) / 'data')
+except Exception:
     import os.path as p
     datapath = p.join(p.dirname(p.abspath(__file__)), 'data')
 

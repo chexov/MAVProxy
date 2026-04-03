@@ -27,8 +27,8 @@ class HelpModule(mp_module.MPModule):
         #  versioning info
         #  pkg_resources doesn't work in the windows exe build, so read the version file
         try:
-            import pkg_resources
-            self.version = pkg_resources.Environment()["mavproxy"][0].version
+            from importlib.metadata import version as _get_version
+            self.version = _get_version("mavproxy")
         except Exception:
             start_script = mp_util.dot_mavproxy("version.txt")
             f = open(start_script, 'r')
